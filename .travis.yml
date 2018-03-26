@@ -1,11 +1,18 @@
-language: c
-sudo: false # only for faster builds
-script:
-  - clang -coverage -O0 cray.c -o cray
-  - ./cray
-script:
-  - gcc -O3 -lm -s -o cray cray.c
-  - ./cray
-after_success:
-  - bash <(curl -s https://codecov.io/bash)
-gcc -O3 -lm -s -o cray cray.c
+# Test ruby
+language: ruby
+
+sudo:
+    false
+    
+rvm:
+  - 2.1.0
+  - 2.2.5
+  - 2.3.1
+  
+install:
+  - gem install authorizenet
+  - bundle install
+
+
+script: 
+  - bundle exec rspec spec/sample_code_spec.rb
