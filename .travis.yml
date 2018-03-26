@@ -1,8 +1,8 @@
 language: c
 sudo: false # only for faster builds
 script:
-  - clang -coverage -O0 hello.c -o hello
-  - ./hello
+  - clang -coverage -O0 cray.c -o cray
+  - ./cray
   - gcov hello.c
 
 after_success:
