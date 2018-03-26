@@ -6,7 +6,7 @@ sudo: false # only for faster builds
 script:
   - clang -coverage -O0 cray.c -o cray
 #- ./cray
-  - gcc -O3 -lm -s -o cray cray.c
+  - gcc -O3 -march=native -g -Wall cray.c
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
