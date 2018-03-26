@@ -50,7 +50,8 @@ uint64_t benchmark_hamming(uint16_t *a, uint16_t *b, int size, int repeats) {
 }
 
 void initialiseArray(uint16_t *a, uint16_t *b, int size) {
-    for (int i = 0; i < size; i++) {
+    int i;
+    for (i = 0; i < size; i++) {
         a[i] = i;
         b[i] = i;
     }
