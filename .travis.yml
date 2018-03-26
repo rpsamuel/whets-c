@@ -1,18 +1,6 @@
-# Test ruby
-language: ruby
-
-sudo:
-    false
-    
-rvm:
-  - 2.1.0
-  - 2.2.5
-  - 2.3.1
-  
-install:
-  - gem install authorizenet
-  - bundle install
-
-
-script: 
-  - bundle exec rspec spec/sample_code_spec.rb
+# Test C
+compiler:
+  - clang
+  - gcc
+script:
+gcc cray.c -o cray
