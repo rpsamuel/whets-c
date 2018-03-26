@@ -38,7 +38,8 @@ uint64_t benchmark_hamming(uint16_t *a, uint16_t *b, int size, int repeats) {
     int dist = hamming_distance(a, b, size);
     printf("%d", dist);
 
-    for(int i = 0; i < repeats; i++) {
+    int i;
+    for(i = 0; i < repeats; i++) {
         clock_gettime(CLOCK_MONOTONIC, &start);
         black_hole += hamming_distance(a, b, size);
         clock_gettime(CLOCK_MONOTONIC, &end);
