@@ -1,60 +1,81 @@
-module Main where
-import qualified Data.Text as T
-import qualified Data.Text.Unsafe as TU
-import qualified Data.Text.Array as TA
-import Data.Text.Internal (Text(Text))
-import Data.Char (chr)
-import Criterion.Main
-import Control.DeepSeq
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <time.h>
 
-stringTo :: Int -> T.Text
-stringTo n = T.pack . map (chr . (`mod` 2^16)) $ [1..n]
+#define ONE_BILLION 1000000000
 
-derpA ::T.Text
-derpB ::T.Text
-derpA = stringTo 1000000
-derpB = stringTo 1000000
+int hamming_distance(uint16_t *a, uint16_t *b, int count) {
+    int total = 0;
+    while(count > 0) {
+        if (*a != *b) {
+            total += 1;
+        }
+        a++;
+        b++;
+        count--;
+    }
+    return total;
+}
 
-tenMilA ::T.Text
-tenMilB ::T.Text
-tenMilA = stringTo 10000000
-tenMilB = stringTo 10000000
+unsigned int tmetrics_hamming (unsigned int len, uint16_t *a, uint16_t *b)
+{
+  unsigned int acc = 0, i;
+  for (i = 0; i < len; i++)
+    {
+      if (*(a + i) != *(b + i)) acc++;
+    }
+  return acc;
+}
 
-hundredMilA ::T.Text
-hundredMilB ::T.Text
-hundredMilA = stringTo 100000
-hundredMilB = stringTo 100000
+uint64_t benchmark_hamming(uint16_t *a, uint16_t *b, int size, int repeats) {
+    struct timespec start, end;
+    // We use a black hole here so that our benchmark code will not get dead code eliminated
+    int64_t black_hole = 0;
+    int64_t total_nanoseconds = 0;
 
-hamming :: T.Text -> T.Text -> Maybe Int
-hamming a b =
-  if T.length a == T.length b
-      then Just (go 0 0 0)
-      else Nothing
-  where
-    go !na !nb !r =
-      let !(TU.Iter cha da) = TU.iter a na
-          !(TU.Iter chb db) = TU.iter b nb
-      in if | na  == len -> r
-            | cha /= chb -> go (na + da) (nb + db) (r + 1)
-            | otherwise  -> go (na + da) (nb + db) r
-    len = TU.lengthWord16 a
+    // Run it once to reduce the effects of caching
+    int dist = hamming_distance(a, b, size);
+    printf("%d", dist);
 
-hammingFast :: T.Text -> T.Text -> Int
-hammingFast a b =
-    let
-        Text arra ofa lena = a
-        Text arrb ofb lenb = b
-        loop !i !distance =
-            if i < lena then
-                if TA.unsafeIndex arra (ofa + i) /= TA.unsafeIndex arrb (ofb + i) then
-                    loop (i + 1) (distance + 1)
-                else
-                    loop (i + 1) distance
-            else
-                distance
-    in
-        loop 0 0
+    for(int i = 0; i < repeats; i++) {
+        clock_gettime(CLOCK_MONOTONIC, &start);
+        black_hole += hamming_distance(a, b, size);
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        total_nanoseconds += ONE_BILLION*(end.tv_sec - start.tv_sec) + end.tv_nsec - start.tv_nsec;
+    }
+    printf("%ld\n", black_hole);
+    return total_nanoseconds;
+}
 
-main = deepseq (derpA, derpB) $ defaultMain [ bgroup "hamming code fast" [bench "100 thousand" $ nf (uncurry hammingFast) $! (hundredMilA, hundredMilB),
-                                                                          bench "1 Million" $ nf (uncurry hammingFast) $! (derpA, derpB),
-                                                                          bench "10 million" $ nf (uncurry hammingFast) $! (tenMilA, tenMilB)]]
+void initialiseArray(uint16_t *a, uint16_t *b, int size) {
+    for (int i = 0; i < size; i++) {
+        a[i] = i;
+        b[i] = i;
+    }
+}
+
+void benchmark_hamming_length(int size) {
+    const int repeats = 1000;
+    uint16_t *a = malloc(size*sizeof(uint16_t));
+    uint16_t *b = malloc(size*sizeof(uint16_t));
+
+    initialiseArray(a, b, size);
+
+    uint64_t nanoseconds = benchmark_hamming(a, b, size, repeats);
+    printf("String Size: %d characters\n", size);
+    printf("Time taken: %ld seconds and %ld microseconds\n", nanoseconds/ONE_BILLION, (nanoseconds % ONE_BILLION)/1000);
+    uint64_t average_time = nanoseconds / repeats;
+    printf("Average time taken: %ld seconds and %ld microseconds\n", average_time/ONE_BILLION, (average_time % ONE_BILLION)/1000);
+    free(a);
+    free(b);
+}
+
+
+int main () {
+    benchmark_hamming_length(100000);
+    benchmark_hamming_length(1000000);
+    benchmark_hamming_length(10000000);
+    benchmark_hamming_length(100000000);
+    benchmark_hamming_length(1000000000);
+}
