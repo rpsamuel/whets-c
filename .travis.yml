@@ -5,8 +5,8 @@ compiler:
 sudo: false # only for faster builds
 script:
   - clang -coverage -O0 cray.c -o cray
-  - ./cray
-  - gcc -O3 -lm -s -o whets whets.c
+#- ./cray
+  - gcc -O3 -lm -s -o cray cray.c
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
