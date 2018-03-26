@@ -1,12 +1,23 @@
-#language: c
-compiler:
-  - clang
-  - gcc
-sudo: false # only for faster builds
+sudo: false
+
+language:
+  - cpp
+
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+
+before_install:
+  - pip install --user cpp-coveralls
+
 script:
-  - clang -coverage -O0 cray.c -o cray
-#- ./cray
-  - gcc -O3 -march=native -g -Wall cray.c
+  - mkdir build
+  - cd build
+
 
 after_success:
-  - bash <(curl -s https://codecov.io/bash)
+  - coveralls --root .. -E ".*external.*" -E ".*CMakeFiles.*" -E ".*test/.*.cpp.*"
+
+notifications:
+  email: false
