@@ -1,9 +1,12 @@
-language: c
+#language: c
+compiler:
+  - clang
+  - gcc
 sudo: false # only for faster builds
 script:
   - clang -coverage -O0 cray.c -o cray
   - ./cray
-  - gcov hello.c
+  - gcc -O3 -lm -s -o whets whets.c
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
