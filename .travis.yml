@@ -14,7 +14,7 @@ before_install:
 script:
   - mkdir build
   - cd build
--g++ O0 -g --coverage -std=c++14 bench.c bench
+-g++ benchc.cpp
 
 after_success:
   - coveralls --root .. -E ".*external.*" -E ".*CMakeFiles.*" -E ".*test/.*.cpp.*"
