@@ -13,8 +13,11 @@ before_install:
 
 script:
   - g++ -o benchc benchc.cpp
+  - g++ -o linpack-single  linpack-single.cpp
+  - g++ -o linpack-double  linpack-double.cpp
   - ls -al
-  - ./benchc
+  - ./linpack-single
+  - ./linpack-double
   - mkdir build
   - cd build
  
