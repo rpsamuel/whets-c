@@ -14,8 +14,8 @@ before_install:
 script:
   - mkdir build
   - cd build
-  - cp ../linpack-single .
-  - cp ../linpack-double .
+  - cp ../linpack-single.cpp .
+  - cp ../linpack-double.cpp .
   - g++ -o linpack-single  linpack-single.cpp
   - g++ -o linpack-double  linpack-double.cpp
   - ls -al
