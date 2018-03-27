@@ -12,14 +12,16 @@ before_install:
   - pip install --user cpp-coveralls
 
 script:
-  - g++ -o benchc benchc.cpp
+  - mkdir build
+  - cd build
+  - cp ../linpack-single .
+  - cp ../linpack-double .
   - g++ -o linpack-single  linpack-single.cpp
   - g++ -o linpack-double  linpack-double.cpp
   - ls -al
   - ./linpack-single
   - ./linpack-double
-  - mkdir build
-  - cd build
+  
  
 
 after_success:
