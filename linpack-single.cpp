@@ -1,752 +1,1185 @@
-      real a(1001,1000),b(1000),x(1000)
-      real time(6),cray,ops,total,norma,normx
-      real resid,residn,eps,epslon
-      integer ipvt(1000)
-      lda = 1001
-c
-c     this program was updated on 10/12/92 to correct a
-c     problem with the random number generator. The previous
-c     random number generator had a short period and produced
-c     singular matrices occasionally.
-c
-      n = 1000
-      cray = .056
-      write(6,1)
-    1 format(' Please send the results of this run to:'//
-     $       ' Jack J. Dongarra'/
-     $       ' Computer Science Department'/
-     $       ' University of Tennessee'/
-     $       ' Knoxville, Tennessee 37996-1300'//
-     $       ' Fax: 615-974-8296'//
-     $       ' Internet: dongarra@cs.utk.edu'/)
-      ops = (2.0d0*float(n)**3)/3.0d0 + 2.0d0*float(n)**2
-c
-         call matgen(a,lda,n,b,norma)
-c******************************************************************
-c******************************************************************
-c        you should replace the call to sgefa and sgesl
-c        by calls to your linear equation solver.
-c******************************************************************
-c******************************************************************
-         t1 = second()
-         call sgefa(a,lda,n,ipvt,info)
-         time(1) = second() - t1
-         t1 = second()
-         call sgesl(a,lda,n,ipvt,b,0)
-         time(2) = second() - t1
-         total = time(1) + time(2)
-c******************************************************************
-c******************************************************************
-c
-c     compute a residual to verify results.
-c
-         do 10 i = 1,n
-            x(i) = b(i)
-   10    continue
-         call matgen(a,lda,n,b,norma)
-         do 20 i = 1,n
-            b(i) = -b(i)
-   20    continue
-         call smxpy(n,b,n,lda,x,a)
-         resid = 0.0
-         normx = 0.0
-         do 30 i = 1,n
-            resid = amax1( resid, abs(b(i)) )
-            normx = amax1( normx, abs(x(i)) )
-   30    continue
-         eps = epslon(1.0)
-         residn = resid/( n*norma*normx*eps )
-         write(6,40)
-   40    format('     norm. resid      resid           machep',
-     $          '         x(1)          x(n)')
-         write(6,50) residn,resid,eps,x(1),x(n)
-   50    format(1p5e16.8)
-c
-         write(6,60) n
-   60    format(//'    times are reported for matrices of order ',i5)
-         write(6,70)
-   70    format(6x,'factor',5x,'solve',6x,'total',5x,'mflops',7x,'unit',
-     $         6x,'ratio')
-c
-         time(3) = total
-         time(4) = ops/(1.0e6*total)
-         time(5) = 2.0e0/time(4)
-         time(6) = total/cray
-         write(6,80) lda
-   80    format(' times for array with leading dimension of',i4)
-         write(6,110) (time(i),i=1,6)
-  110    format(6(1pe11.3))
-         write(6,*)' end of tests -- this version dated 10/12/92'
-c
-      stop
-      end
-      subroutine matgen(a,lda,n,b,norma)
-      integer lda,n,i,j,init(4)
-      real a(lda,1),b(1),norma,ran
-c
-      init(1) = 1
-      init(2) = 2
-      init(3) = 3
-      init(4) = 1325
-      norma = 0.0
-      do 30 j = 1,n
-         do 20 i = 1,n
-            a(i,j) = ran(init) - .5
-            norma = amax1(abs(a(i,j)), norma)
-   20    continue
-   30 continue
-      do 35 i = 1,n
-          b(i) = 0.0
-   35 continue
-      do 50 j = 1,n
-         do 40 i = 1,n
-            b(i) = b(i) + a(i,j)
-   40    continue
-   50 continue
-      return
-      end
-      subroutine sgefa(a,lda,n,ipvt,info)
-      integer lda,n,ipvt(1),info
-      real a(lda,1)
-c
-c     sgefa factors a real matrix by gaussian elimination.
-c
-c     sgefa is usually called by dgeco, but it can be called
-c     directly with a saving in time if  rcond  is not needed.
-c     (time for dgeco) = (1 + 9/n)*(time for sgefa) .
-c
-c     on entry
-c
-c        a       real(lda, n)
-c                the matrix to be factored.
-c
-c        lda     integer
-c                the leading dimension of the array  a .
-c
-c        n       integer
-c                the order of the matrix  a .
-c
-c     on return
-c
-c        a       an upper triangular matrix and the multipliers
-c                which were used to obtain it.
-c                the factorization can be written  a = l*u  where
-c                l  is a product of permutation and unit lower
-c                triangular matrices and  u  is upper triangular.
-c
-c        ipvt    integer(n)
-c                an integer vector of pivot indices.
-c
-c        info    integer
-c                = 0  normal value.
-c                = k  if  u(k,k) .eq. 0.0 .  this is not an error
-c                     condition for this subroutine, but it does
-c                     indicate that sgesl or dgedi will divide by zero
-c                     if called.  use  rcond  in dgeco for a reliable
-c                     indication of singularity.
-c
-c     linpack. this version dated 08/14/78 .
-c     cleve moler, university of new mexico, argonne national lab.
-c
-c     subroutines and functions
-c
-c     blas saxpy,sscal,isamax
-c
-c     internal variables
-c
-      real t
-      integer isamax,j,k,kp1,l,nm1
-c
-c
-c     gaussian elimination with partial pivoting
-c
-      info = 0
-      nm1 = n - 1
-      if (nm1 .lt. 1) go to 70
-      do 60 k = 1, nm1
-         kp1 = k + 1
-c
-c        find l = pivot index
-c
-         l = isamax(n-k+1,a(k,k),1) + k - 1
-         ipvt(k) = l
-c
-c        zero pivot implies this column already triangularized
-c
-         if (a(l,k) .eq. 0.0e0) go to 40
-c
-c           interchange if necessary
-c
-            if (l .eq. k) go to 10
-               t = a(l,k)
-               a(l,k) = a(k,k)
-               a(k,k) = t
-   10       continue
-c
-c           compute multipliers
-c
-            t = -1.0e0/a(k,k)
-            call sscal(n-k,t,a(k+1,k),1)
-c
-c           row elimination with column indexing
-c
-            do 30 j = kp1, n
-               t = a(l,j)
-               if (l .eq. k) go to 20
-                  a(l,j) = a(k,j)
-                  a(k,j) = t
-   20          continue
-               call saxpy(n-k,t,a(k+1,k),1,a(k+1,j),1)
-   30       continue
-         go to 50
-   40    continue
-            info = k
-   50    continue
-   60 continue
-   70 continue
-      ipvt(n) = n
-      if (a(n,n) .eq. 0.0e0) info = n
-      return
-      end
-      subroutine sgesl(a,lda,n,ipvt,b,job)
-      integer lda,n,ipvt(1),job
-      real a(lda,1),b(1)
-c
-c     sgesl solves the real system
-c     a * x = b  or  trans(a) * x = b
-c     using the factors computed by dgeco or sgefa.
-c
-c     on entry
-c
-c        a       real(lda, n)
-c                the output from dgeco or sgefa.
-c
-c        lda     integer
-c                the leading dimension of the array  a .
-c
-c        n       integer
-c                the order of the matrix  a .
-c
-c        ipvt    integer(n)
-c                the pivot vector from dgeco or sgefa.
-c
-c        b       real(n)
-c                the right hand side vector.
-c
-c        job     integer
-c                = 0         to solve  a*x = b ,
-c                = nonzero   to solve  trans(a)*x = b  where
-c                            trans(a)  is the transpose.
-c
-c     on return
-c
-c        b       the solution vector  x .
-c
-c     error condition
-c
-c        a division by zero will occur if the input factor contains a
-c        zero on the diagonal.  technically this indicates singularity
-c        but it is often caused by improper arguments or improper
-c        setting of lda .  it will not occur if the subroutines are
-c        called correctly and if dgeco has set rcond .gt. 0.0
-c        or sgefa has set info .eq. 0 .
-c
-c     to compute  inverse(a) * c  where  c  is a matrix
-c     with  p  columns
-c           call dgeco(a,lda,n,ipvt,rcond,z)
-c           if (rcond is too small) go to ...
-c           do 10 j = 1, p
-c              call sgesl(a,lda,n,ipvt,c(1,j),0)
-c        10 continue
-c
-c     linpack. this version dated 08/14/78 .
-c     cleve moler, university of new mexico, argonne national lab.
-c
-c     subroutines and functions
-c
-c     blas saxpy,sdot
-c
-c     internal variables
-c
-      real sdot,t
-      integer k,kb,l,nm1
-c
-      nm1 = n - 1
-      if (job .ne. 0) go to 50
-c
-c        job = 0 , solve  a * x = b
-c        first solve  l*y = b
-c
-         if (nm1 .lt. 1) go to 30
-         do 20 k = 1, nm1
-            l = ipvt(k)
-            t = b(l)
-            if (l .eq. k) go to 10
-               b(l) = b(k)
-               b(k) = t
-   10       continue
-            call saxpy(n-k,t,a(k+1,k),1,b(k+1),1)
-   20    continue
-   30    continue
-c
-c        now solve  u*x = y
-c
-         do 40 kb = 1, n
-            k = n + 1 - kb
-            b(k) = b(k)/a(k,k)
-            t = -b(k)
-            call saxpy(k-1,t,a(1,k),1,b(1),1)
-   40    continue
-      go to 100
-   50 continue
-c
-c        job = nonzero, solve  trans(a) * x = b
-c        first solve  trans(u)*y = b
-c
-         do 60 k = 1, n
-            t = sdot(k-1,a(1,k),1,b(1),1)
-            b(k) = (b(k) - t)/a(k,k)
-   60    continue
-c
-c        now solve trans(l)*x = y
-c
-         if (nm1 .lt. 1) go to 90
-         do 80 kb = 1, nm1
-            k = n - kb
-            b(k) = b(k) + sdot(n-k,a(k+1,k),1,b(k+1),1)
-            l = ipvt(k)
-            if (l .eq. k) go to 70
-               t = b(l)
-               b(l) = b(k)
-               b(k) = t
-   70       continue
-   80    continue
-   90    continue
-  100 continue
-      return
-      end
-      subroutine saxpy(n,da,dx,incx,dy,incy)
-c
-c     constant times a vector plus a vector.
-c     uses unrolled loops for increments equal to one.
-c     jack dongarra, linpack, 3/11/78.
-c
-      real dx(1),dy(1),da
-      integer i,incx,incy,ix,iy,m,mp1,n
-c
-      if(n.le.0)return
-      if (da .eq. 0.0e0) return
-      if(incx.eq.1.and.incy.eq.1)go to 20
-c
-c        code for unequal increments or equal increments
-c          not equal to 1
-c
-      ix = 1
-      iy = 1
-      if(incx.lt.0)ix = (-n+1)*incx + 1
-      if(incy.lt.0)iy = (-n+1)*incy + 1
-      do 10 i = 1,n
-        dy(iy) = dy(iy) + da*dx(ix)
-        ix = ix + incx
-        iy = iy + incy
-   10 continue
-      return
-c
-c        code for both increments equal to 1
-c
-c
-c        clean-up loop
-c
-   20 m = mod(n,4)
-      if( m .eq. 0 ) go to 40
-      do 30 i = 1,m
-        dy(i) = dy(i) + da*dx(i)
-   30 continue
-      if( n .lt. 4 ) return
-   40 mp1 = m + 1
-      do 50 i = mp1,n,4
-        dy(i) = dy(i) + da*dx(i)
-        dy(i + 1) = dy(i + 1) + da*dx(i + 1)
-        dy(i + 2) = dy(i + 2) + da*dx(i + 2)
-        dy(i + 3) = dy(i + 3) + da*dx(i + 3)
-   50 continue
-      return
-      end
-      real function sdot(n,dx,incx,dy,incy)
-c
-c     forms the dot product of two vectors.
-c     uses unrolled loops for increments equal to one.
-c     jack dongarra, linpack, 3/11/78.
-c
-      real dx(1),dy(1),dtemp
-      integer i,incx,incy,ix,iy,m,mp1,n
-c
-      sdot = 0.0e0
-      dtemp = 0.0e0
-      if(n.le.0)return
-      if(incx.eq.1.and.incy.eq.1)go to 20
-c
-c        code for unequal increments or equal increments
-c          not equal to 1
-c
-      ix = 1
-      iy = 1
-      if(incx.lt.0)ix = (-n+1)*incx + 1
-      if(incy.lt.0)iy = (-n+1)*incy + 1
-      do 10 i = 1,n
-        dtemp = dtemp + dx(ix)*dy(iy)
-        ix = ix + incx
-        iy = iy + incy
-   10 continue
-      sdot = dtemp
-      return
-c
-c        code for both increments equal to 1
-c
-c
-c        clean-up loop
-c
-   20 m = mod(n,5)
-      if( m .eq. 0 ) go to 40
-      do 30 i = 1,m
-        dtemp = dtemp + dx(i)*dy(i)
-   30 continue
-      if( n .lt. 5 ) go to 60
-   40 mp1 = m + 1
-      do 50 i = mp1,n,5
-        dtemp = dtemp + dx(i)*dy(i) + dx(i + 1)*dy(i + 1) +
-     *   dx(i + 2)*dy(i + 2) + dx(i + 3)*dy(i + 3) + dx(i + 4)*dy(i + 4)
-   50 continue
-   60 sdot = dtemp
-      return
-      end
-      subroutine  sscal(n,da,dx,incx)
-c
-c     scales a vector by a constant.
-c     uses unrolled loops for increment equal to one.
-c     jack dongarra, linpack, 3/11/78.
-c
-      real da,dx(1)
-      integer i,incx,m,mp1,n,nincx
-c
-      if(n.le.0)return
-      if(incx.eq.1)go to 20
-c
-c        code for increment not equal to 1
-c
-      nincx = n*incx
-      do 10 i = 1,nincx,incx
-        dx(i) = da*dx(i)
-   10 continue
-      return
-c
-c        code for increment equal to 1
-c
-c
-c        clean-up loop
-c
-   20 m = mod(n,5)
-      if( m .eq. 0 ) go to 40
-      do 30 i = 1,m
-        dx(i) = da*dx(i)
-   30 continue
-      if( n .lt. 5 ) return
-   40 mp1 = m + 1
-      do 50 i = mp1,n,5
-        dx(i) = da*dx(i)
-        dx(i + 1) = da*dx(i + 1)
-        dx(i + 2) = da*dx(i + 2)
-        dx(i + 3) = da*dx(i + 3)
-        dx(i + 4) = da*dx(i + 4)
-   50 continue
-      return
-      end
-      integer function isamax(n,dx,incx)
-c
-c     finds the index of element having max. absolute value.
-c     jack dongarra, linpack, 3/11/78.
-c
-      real dx(1),dmax
-      integer i,incx,ix,n
-c
-      isamax = 0
-      if( n .lt. 1 ) return
-      isamax = 1
-      if(n.eq.1)return
-      if(incx.eq.1)go to 20
-c
-c        code for increment not equal to 1
-c
-      ix = 1
-      dmax = abs(dx(1))
-      ix = ix + incx
-      do 10 i = 2,n
-         if(abs(dx(ix)).le.dmax) go to 5
-         isamax = i
-         dmax = abs(dx(ix))
-    5    ix = ix + incx
-   10 continue
-      return
-c
-c        code for increment equal to 1
-c
-   20 dmax = abs(dx(1))
-      do 30 i = 2,n
-         if(abs(dx(i)).le.dmax) go to 30
-         isamax = i
-         dmax = abs(dx(i))
-   30 continue
-      return
-      end
-      REAL FUNCTION EPSLON (X)
-      REAL X
-C
-C     ESTIMATE UNIT ROUNDOFF IN QUANTITIES OF SIZE X.
-C
-      REAL A,B,C,EPS
-C
-C     THIS PROGRAM SHOULD FUNCTION PROPERLY ON ALL SYSTEMS
-C     SATISFYING THE FOLLOWING TWO ASSUMPTIONS,
-C        1.  THE BASE USED IN REPRESENTING FLOATING POINT
-C            NUMBERS IS NOT A POWER OF THREE.
-C        2.  THE QUANTITY  A  IN STATEMENT 10 IS REPRESENTED TO 
-C            THE ACCURACY USED IN FLOATING POINT VARIABLES
-C            THAT ARE STORED IN MEMORY.
-C     THE STATEMENT NUMBER 10 AND THE GO TO 10 ARE INTENDED TO
-C     FORCE OPTIMIZING COMPILERS TO GENERATE CODE SATISFYING 
-C     ASSUMPTION 2.
-C     UNDER THESE ASSUMPTIONS, IT SHOULD BE TRUE THAT,
-C            A  IS NOT EXACTLY EQUAL TO FOUR-THIRDS,
-C            B  HAS A ZERO FOR ITS LAST BIT OR DIGIT,
-C            C  IS NOT EXACTLY EQUAL TO ONE,
-C            EPS  MEASURES THE SEPARATION OF 1.0 FROM
-C                 THE NEXT LARGER FLOATING POINT NUMBER.
-C     THE DEVELOPERS OF EISPACK WOULD APPRECIATE BEING INFORMED
-C     ABOUT ANY SYSTEMS WHERE THESE ASSUMPTIONS DO NOT HOLD.
-C
-C     *****************************************************************
-C     THIS ROUTINE IS ONE OF THE AUXILIARY ROUTINES USED BY EISPACK III
-C     TO AVOID MACHINE DEPENDENCIES.
-C     *****************************************************************
-C
-C     THIS VERSION DATED 4/6/83.
-C
-      A = 4.0E0/3.0E0
-   10 B = A - 1.0E0
-      C = B + B + B
-      EPS = ABS(C-1.0E0)
-      IF (EPS .EQ. 0.0E0) GO TO 10
-      EPSLON = EPS*ABS(X)
-      RETURN
-      END
-      SUBROUTINE MM (A, LDA, N1, N3, B, LDB, N2, C, LDC)
-      REAL A(LDA,*), B(LDB,*), C(LDC,*)
-C
-C   PURPOSE:
-C     MULTIPLY MATRIX B TIMES MATRIX C AND STORE THE RESULT IN MATRIX A.
-C
-C   PARAMETERS:
-C
-C     A REAL(LDA,N3), MATRIX OF N1 ROWS AND N3 COLUMNS
-C
-C     LDA INTEGER, LEADING DIMENSION OF ARRAY A
-C
-C     N1 INTEGER, NUMBER OF ROWS IN MATRICES A AND B
-C
-C     N3 INTEGER, NUMBER OF COLUMNS IN MATRICES A AND C
-C
-C     B REAL(LDB,N2), MATRIX OF N1 ROWS AND N2 COLUMNS
-C
-C     LDB INTEGER, LEADING DIMENSION OF ARRAY B
-C
-C     N2 INTEGER, NUMBER OF COLUMNS IN MATRIX B, AND NUMBER OF ROWS IN
-C         MATRIX C
-C
-C     C REAL(LDC,N3), MATRIX OF N2 ROWS AND N3 COLUMNS
-C
-C     LDC INTEGER, LEADING DIMENSION OF ARRAY C
-C
-C ----------------------------------------------------------------------
-C
-      DO 20 J = 1, N3
-         DO 10 I = 1, N1
-            A(I,J) = 0.0
-   10    CONTINUE
-         CALL SMXPY (N2,A(1,J),N1,LDB,C(1,J),B)
-   20 CONTINUE
-C
-      RETURN
-      END
-      SUBROUTINE SMXPY (N1, Y, N2, LDM, X, M)
-      REAL Y(*), X(*), M(LDM,*)
-C
-C   PURPOSE:
-C     MULTIPLY MATRIX M TIMES VECTOR X AND ADD THE RESULT TO VECTOR Y.
-C
-C   PARAMETERS:
-C
-C     N1 INTEGER, NUMBER OF ELEMENTS IN VECTOR Y, AND NUMBER OF ROWS IN
-C         MATRIX M
-C
-C     Y REAL(N1), VECTOR OF LENGTH N1 TO WHICH IS ADDED THE PRODUCT M*X
-C
-C     N2 INTEGER, NUMBER OF ELEMENTS IN VECTOR X, AND NUMBER OF COLUMNS
-C         IN MATRIX M
-C
-C     LDM INTEGER, LEADING DIMENSION OF ARRAY M
-C
-C     X REAL(N2), VECTOR OF LENGTH N2
-C
-C     M REAL(LDM,N2), MATRIX OF N1 ROWS AND N2 COLUMNS
-C
-C ----------------------------------------------------------------------
-C
-C   CLEANUP ODD VECTOR
-C
-      J = MOD(N2,2)
-      IF (J .GE. 1) THEN
-         DO 10 I = 1, N1
-            Y(I) = (Y(I)) + X(J)*M(I,J)
-   10    CONTINUE
-      ENDIF
-C
-C   CLEANUP ODD GROUP OF TWO VECTORS
-C
-      J = MOD(N2,4)
-      IF (J .GE. 2) THEN
-         DO 20 I = 1, N1
-            Y(I) = ( (Y(I))
-     $             + X(J-1)*M(I,J-1)) + X(J)*M(I,J)
-   20    CONTINUE
-      ENDIF
-C
-C   CLEANUP ODD GROUP OF FOUR VECTORS
-C
-      J = MOD(N2,8)
-      IF (J .GE. 4) THEN
-         DO 30 I = 1, N1
-            Y(I) = ((( (Y(I))
-     $             + X(J-3)*M(I,J-3)) + X(J-2)*M(I,J-2))
-     $             + X(J-1)*M(I,J-1)) + X(J)  *M(I,J)
-   30    CONTINUE
-      ENDIF
-C
-C   CLEANUP ODD GROUP OF EIGHT VECTORS
-C
-      J = MOD(N2,16)
-      IF (J .GE. 8) THEN
-         DO 40 I = 1, N1
-            Y(I) = ((((((( (Y(I))
-     $             + X(J-7)*M(I,J-7)) + X(J-6)*M(I,J-6))
-     $             + X(J-5)*M(I,J-5)) + X(J-4)*M(I,J-4))
-     $             + X(J-3)*M(I,J-3)) + X(J-2)*M(I,J-2))
-     $             + X(J-1)*M(I,J-1)) + X(J)  *M(I,J)
-   40    CONTINUE
-      ENDIF
-C
-C   MAIN LOOP - GROUPS OF SIXTEEN VECTORS
-C
-      JMIN = J+16
-      DO 60 J = JMIN, N2, 16
-         DO 50 I = 1, N1
-            Y(I) = ((((((((((((((( (Y(I))
-     $             + X(J-15)*M(I,J-15)) + X(J-14)*M(I,J-14))
-     $             + X(J-13)*M(I,J-13)) + X(J-12)*M(I,J-12))
-     $             + X(J-11)*M(I,J-11)) + X(J-10)*M(I,J-10))
-     $             + X(J- 9)*M(I,J- 9)) + X(J- 8)*M(I,J- 8))
-     $             + X(J- 7)*M(I,J- 7)) + X(J- 6)*M(I,J- 6))
-     $             + X(J- 5)*M(I,J- 5)) + X(J- 4)*M(I,J- 4))
-     $             + X(J- 3)*M(I,J- 3)) + X(J- 2)*M(I,J- 2))
-     $             + X(J- 1)*M(I,J- 1)) + X(J)   *M(I,J)
-   50    CONTINUE
-   60 CONTINUE
-      RETURN
-      END
-      REAL FUNCTION RAN( ISEED )
-*
-*     modified from the LAPACK auxiliary routine 10/12/92 JD
-*  -- LAPACK auxiliary routine (version 1.0) --
-*     Univ. of Tennessee, Univ. of California Berkeley, NAG Ltd.,
-*     Courant Institute, Argonne National Lab, and Rice University
-*     February 29, 1992
-*
-*     .. Array Arguments ..
-      INTEGER            ISEED( 4 )
-*     ..
-*
-*  Purpose
-*  =======
-*
-*  SLARAN returns a random real number from a uniform (0,1)
-*  distribution.
-*
-*  Arguments
-*  =========
-*
-*  ISEED   (input/output) INTEGER array, dimension (4)
-*          On entry, the seed of the random number generator; the array
-*          elements must be between 0 and 4095, and ISEED(4) must be
-*          odd.
-*          On exit, the seed is updated.
-*
-*  Further Details
-*  ===============
-*
-*  This routine uses a multiplicative congruential method with modulus
-*  2**48 and multiplier 33952834046453 (see G.S.Fishman,
-*  'Multiplicative congruential random number generators with modulus
-*  2**b: an exhaustive analysis for b = 32 and a partial analysis for
-*  b = 48', Math. Comp. 189, pp 331-344, 1990).
-*
-*  48-bit integers are stored in 4 integer array elements with 12 bits
-*  per element. Hence the routine is portable across machines with
-*  integers of 32 bits or more.
-*
-*     .. Parameters ..
-      INTEGER            M1, M2, M3, M4
-      PARAMETER          ( M1 = 494, M2 = 322, M3 = 2508, M4 = 2549 )
-      REAL               ONE
-      PARAMETER          ( ONE = 1.0E+0 )
-      INTEGER            IPW2
-      REAL               R
-      PARAMETER          ( IPW2 = 4096, R = ONE / IPW2 )
-*     ..
-*     .. Local Scalars ..
-      INTEGER            IT1, IT2, IT3, IT4
-*     ..
-*     .. Intrinsic Functions ..
-      INTRINSIC          MOD, REAL
-*     ..
-*     .. Executable Statements ..
-*
-*     multiply the seed by the multiplier modulo 2**48
-*
-      IT4 = ISEED( 4 )*M4
-      IT3 = IT4 / IPW2
-      IT4 = IT4 - IPW2*IT3
-      IT3 = IT3 + ISEED( 3 )*M4 + ISEED( 4 )*M3
-      IT2 = IT3 / IPW2
-      IT3 = IT3 - IPW2*IT2
-      IT2 = IT2 + ISEED( 2 )*M4 + ISEED( 3 )*M3 + ISEED( 4 )*M2
-      IT1 = IT2 / IPW2
-      IT2 = IT2 - IPW2*IT1
-      IT1 = IT1 + ISEED( 1 )*M4 + ISEED( 2 )*M3 + ISEED( 3 )*M2 +
-     $      ISEED( 4 )*M1
-      IT1 = MOD( IT1, IPW2 )
-*
-*     return updated seed
-*
-      ISEED( 1 ) = IT1
-      ISEED( 2 ) = IT2
-      ISEED( 3 ) = IT3
-      ISEED( 4 ) = IT4
-*
-*     convert 48-bit integer to a real number in the interval (0,1)
-*
-      RAN = R*( REAL( IT1 )+R*( REAL( IT2 )+R*( REAL( IT3 )+R*
-     $         ( REAL( IT4 ) ) ) ) )
-      RETURN
-*
-*     End of RAN
-*
-      END
+      # include <cstdlib>
+# include <iostream>
+# include <iomanip>
+# include <cmath>
+# include <ctime>
+
+using namespace std;
+
+int main ( void );
+double cpu_time ( void );
+void saxpy ( int n, float da, float dx[], int incx, float dy[], int incy );
+float sdot ( int n, float dx[], int incx, float dy[], int incy );
+int sgefa ( float a[], int lda, int n, int ipvt[] );
+void sgesl ( float a[], int lda, int n, int ipvt[], float b[], int job );
+void sscal ( int n, float sa, float x[], int incx );
+int isamax ( int n, float dx[], int incx );
+float r4_abs ( float x );
+float r4_epsilon ( );
+float r4_max ( float x, float y );
+float r4_random ( int iseed[4] );
+float *r4mat_gen ( int lda, int n );
+void timestamp ( void );
+
+//****************************************************************************80
+
+int main ( )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    MAIN is the main program for LINPACK_BENCH_S.
+//
+//  Discussion:
+//
+//    LINPACK_BENCH_S drives the single precision LINPACK benchmark program.
+//
+//  Modified:
+//
+//    30 November 2006
+//
+//  Parameters:
+//
+//    N is the problem size.
+//
+{
+# define N 1000
+# define LDA ( N + 1 )
+
+  float *a;
+  float a_max;
+  float *b;
+  float b_max;
+  float cray = 0.056;
+  float eps;
+  int i;
+  int info;
+  int *ipvt;
+  int j;
+  int job;
+  float ops;
+  float *resid;
+  float resid_max;
+  float residn;
+  float *rhs;
+  double t1;
+  double t2;
+  double time[6];
+  float total;
+  float *x;
+
+  timestamp ( );
+  cout << "\n";
+  cout << "LINPACK_BENCH_S\n";
+  cout << "  C++ version\n";
+  cout << "\n";
+  cout << "  The LINPACK benchmark.\n";
+  cout << "  Language: C++\n";
+  cout << "  Datatype: Single precision\n";
+  cout << "  Matrix order N               = " << N << "\n";
+  cout << "  Leading matrix dimension LDA = " << LDA << "\n";
+
+  ops = ( float ) ( 2 * N * N * N ) / 3.0 + 2.0 * ( float ) ( N * N );
+//
+//  Allocate space for arrays.
+//
+  a = r4mat_gen ( LDA, N );
+  b = new float[N];
+  ipvt = new int[N];
+  resid = new float[N];
+  rhs = new float[N];
+  x = new float[N];
+
+  a_max = 0.0;
+  for ( j = 0; j < N; j++ )
+  {
+    for ( i = 0; i < N; i++ )
+    {
+      a_max = r4_max ( a_max, a[i+j*LDA] );
+    }
+  }
+
+  for ( i = 0; i < N; i++ )
+  {
+    x[i] = 1.0;
+  }
+
+  for ( i = 0; i < N; i++ )
+  {
+    b[i] = 0.0;
+    for ( j = 0; j < N; j++ )
+    {
+      b[i] = b[i] + a[i+j*LDA] * x[j];
+    }
+  }
+  t1 = cpu_time ( );
+
+  info = sgefa ( a, LDA, N, ipvt );
+
+  if ( info != 0 )
+  {
+    cout << "\n";
+    cout << "LINPACK_BENCH_S - Fatal error!\n";
+    cout << "  The matrix A is apparently singular.\n";
+    cout << "  Abnormal end of execution.\n";
+    return 1;
+  }
+
+  t2 = cpu_time ( );
+  time[0] = t2 - t1;
+
+  t1 = cpu_time ( );
+
+  job = 0;
+  sgesl ( a, LDA, N, ipvt, b, job );
+
+  t2 = cpu_time ( );
+  time[1] = t2 - t1;
+
+  total = time[0] + time[1];
+
+  delete [] a;
+//
+//  Compute a residual to verify results.
+//
+  a = r4mat_gen ( LDA, N );
+
+  for ( i = 0; i < N; i++ )
+  {
+    x[i] = 1.0;
+  }
+
+  for ( i = 0; i < N; i++ )
+  {
+    rhs[i] = 0.0;
+    for ( j = 0; j < N; j++ )
+    {
+      rhs[i] = rhs[i] + a[i+j*LDA] * x[j];
+    }
+  }
+
+  for ( i = 0; i < N; i++ )
+  {
+    resid[i] = -rhs[i];
+    for ( j = 0; j < N; j++ )
+    {
+      resid[i] = resid[i] + a[i+j*LDA] * b[j];
+    }
+  }
+
+  resid_max = 0.0;
+  for ( i = 0; i < N; i++ )
+  {
+    resid_max = r4_max ( resid_max, r4_abs ( resid[i] ) );
+  }
+
+  b_max = 0.0;
+  for ( i = 0; i < N; i++ )
+  {
+    b_max = r4_max ( b_max, r4_abs ( b[i] ) );
+  }
+
+  eps = r4_epsilon ( );
+
+  residn = resid_max /  ( ( float ) N * a_max * b_max * eps );
+
+  time[2] = total;
+  if ( 0.0 < total )
+  {
+    time[3] = ops / ( 1.0E+06 * total );
+  }
+  else
+  {
+    time[3] = -1.0;
+  }
+  time[4] = 2.0 / time[3];
+  time[5] = total / cray;
+
+  cout << "\n";
+  cout << "     Norm. Resid      Resid           MACHEP         X[1]          X[N]\n";
+  cout << "\n";
+  cout << setw(14) << residn << "  "
+       << setw(14) << resid_max << "  "
+       << setw(14) << eps       << "  "
+       << setw(14) << b[0] << "  "
+       << setw(14) << b[N-1] << "\n";
+  cout << "\n";
+  cout << "      Factor     Solve      Total     MFLOPS       Unit      Cray-Ratio\n";
+  cout << "\n";
+  cout << setw(9) << time[0] << "  "
+       << setw(9) << time[1] << "  "
+       << setw(9) << time[2] << "  "
+       << setw(9) << time[3] << "  "
+       << setw(9) << time[4] << "  "
+       << setw(9) << time[5] << "\n";
+
+  delete [] a;
+  delete [] b;
+  delete [] ipvt;
+  delete [] resid;
+  delete [] rhs;
+  delete [] x;
+
+  cout << "\n";
+  cout << "LINPACK_BENCH_S\n";
+  cout << "  Normal end of execution.\n";
+
+  cout << "\n";
+  timestamp ( );
+
+  return 0;
+# undef LDA
+# undef N
+}
+//****************************************************************************80
+
+double cpu_time ( void )
+
+//****************************************************************************80
+//
+//  Purpose:
+// 
+//    CPU_TIME reports the elapsed CPU time.
+//
+//  Discussion:
+//
+//    The data available to this routine through "CLOCK" is not very reliable,
+//    and hence the values of CPU_TIME returned should not be taken too 
+//    seriously, especially when short intervals are being timed.
+//
+//  Licensing:
+//
+//    This code is distributed under the GNU LGPL license. 
+//
+//  Modified:
+//
+//    23 September 2008
+//
+//  Author:
+//
+//    John Burkardt
+//
+//  Parameters:
+//
+//    Output, double CPU_TIME, the current total elapsed CPU time in second.
+//
+{
+  double value;
+
+  value = ( double ) clock ( ) 
+        / ( double ) CLOCKS_PER_SEC;
+
+  return value;
+}
+//****************************************************************************80
+
+void saxpy ( int n, float da, float dx[], int incx, float dy[], int incy )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    SAXPY computes constant times a vector plus a vector.
+//
+//  Discussion:
+//
+//    This routine uses unrolled loops for increments equal to one.
+//
+//  Modified:
+//
+//    02 May 2005
+//
+//  Author:
+//
+//    Jack Dongarra
+//
+//  Reference:
+//
+//    Dongarra, Moler, Bunch, Stewart,
+//    LINPACK User's Guide,
+//    SIAM, 1979.
+//
+//    Lawson, Hanson, Kincaid, Krogh,
+//    Basic Linear Algebra Subprograms for Fortran Usage,
+//    Algorithm 539, 
+//    ACM Transactions on Mathematical Software, 
+//    Volume 5, Number 3, September 1979, pages 308-323.
+//
+//  Parameters:
+//
+//    Input, int N, the number of elements in DX and DY.
+//
+//    Input, float DA, the multiplier of DX.
+//
+//    Input, float DX[*], the first vector.
+//
+//    Input, int INCX, the increment between successive entries of DX.
+//
+//    Input/output, float DY[*], the second vector.
+//    On output, DY[*] has been replaced by DY[*] + DA * DX[*].
+//
+//    Input, int INCY, the increment between successive entries of DY.
+//
+{
+  int i;
+  int ix;
+  int iy;
+  int m;
+
+  if ( n <= 0 )
+  {
+    return;
+  }
+
+  if ( da == 0.0 )
+  {
+    return;
+  }
+//
+//  Code for unequal increments or equal increments
+//  not equal to 1.
+//
+  if ( incx != 1 || incy != 1 )
+  {
+    if ( 0 <= incx )
+    {
+      ix = 0;
+    }
+    else
+    {
+      ix = ( - n + 1 ) * incx;
+    }
+
+    if ( 0 <= incy )
+    {
+      iy = 0;
+    }
+    else
+    {
+      iy = ( - n + 1 ) * incy;
+    }
+
+    for ( i = 0; i < n; i++ )
+    {
+      dy[iy] = dy[iy] + da * dx[ix];
+      ix = ix + incx;
+      iy = iy + incy;
+    }
+  }
+//
+//  Code for both increments equal to 1.
+//
+  else
+  {
+    m = n % 4;
+
+    for ( i = 0; i < m; i++ )
+    {
+      dy[i] = dy[i] + da * dx[i];
+    }
+
+    for ( i = m; i < n; i = i + 4 )
+    {
+      dy[i  ] = dy[i  ] + da * dx[i  ];
+      dy[i+1] = dy[i+1] + da * dx[i+1];
+      dy[i+2] = dy[i+2] + da * dx[i+2];
+      dy[i+3] = dy[i+3] + da * dx[i+3];
+    }
+
+  }
+
+  return;
+}
+//****************************************************************************80
+
+float sdot ( int n, float dx[], int incx, float dy[], int incy )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    SDOT forms the dot product of two vectors.
+//
+//  Discussion:
+//
+//    This routine uses unrolled loops for increments equal to one.
+//
+//  Modified:
+//
+//    02 May 2005
+//
+//  Author:
+//
+//    Jack Dongarra
+//
+//  Reference:
+//
+//    Dongarra, Moler, Bunch, Stewart,
+//    LINPACK User's Guide,
+//    SIAM, 1979.
+//
+//    Lawson, Hanson, Kincaid, Krogh,
+//    Basic Linear Algebra Subprograms for Fortran Usage,
+//    Algorithm 539, 
+//    ACM Transactions on Mathematical Software, 
+//    Volume 5, Number 3, September 1979, pages 308-323.
+//
+//  Parameters:
+//
+//    Input, int N, the number of entries in the vectors.
+//
+//    Input, float DX[*], the first vector.
+//
+//    Input, int INCX, the increment between successive entries in DX.
+//
+//    Input, float DY[*], the second vector.
+//
+//    Input, int INCY, the increment between successive entries in DY.
+//
+//    Output, float SDOT, the sum of the product of the corresponding
+//    entries of DX and DY.
+//
+{
+  float dtemp;
+  int i;
+  int ix;
+  int iy;
+  int m;
+
+  dtemp = 0.0;
+
+  if ( n <= 0 )
+  {
+    return dtemp;
+  }
+//
+//  Code for unequal increments or equal increments
+//  not equal to 1.
+//
+  if ( incx != 1 || incy != 1 )
+  {
+    if ( 0 <= incx )
+    {
+      ix = 0;
+    }
+    else
+    {
+      ix = ( - n + 1 ) * incx;
+    }
+
+    if ( 0 <= incy )
+    {
+      iy = 0;
+    }
+    else
+    {
+      iy = ( - n + 1 ) * incy;
+    }
+
+    for ( i = 0; i < n; i++ )
+    {
+      dtemp = dtemp + dx[ix] * dy[iy];
+      ix = ix + incx;
+      iy = iy + incy;
+    }
+  }
+//
+//  Code for both increments equal to 1.
+//
+  else
+  {
+    m = n % 5;
+
+    for ( i = 0; i < m; i++ )
+    {
+      dtemp = dtemp + dx[i] * dy[i];
+    }
+
+    for ( i = m; i < n; i = i + 5 )
+    {
+      dtemp = dtemp + dx[i  ] * dy[i  ] 
+                    + dx[i+1] * dy[i+1] 
+                    + dx[i+2] * dy[i+2] 
+                    + dx[i+3] * dy[i+3] 
+                    + dx[i+4] * dy[i+4];
+    }
+
+  }
+
+  return dtemp;
+}
+//****************************************************************************80
+
+int sgefa ( float a[], int lda, int n, int ipvt[] )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    SGEFA factors a real general matrix.
+//
+//  Modified:
+//
+//    16 May 2005
+//
+//  Author:
+//
+//    C++ translation by John Burkardt.
+//
+//  Reference:
+//
+//    Dongarra, Moler, Bunch and Stewart,
+//    LINPACK User's Guide,
+//    SIAM, (Society for Industrial and Applied Mathematics),
+//    3600 University City Science Center,
+//    Philadelphia, PA, 19104-2688.
+//    ISBN 0-89871-172-X
+//
+//  Parameters:
+//
+//    Input/output, float A[LDA*N].
+//    On intput, the matrix to be factored.
+//    On output, an upper triangular matrix and the multipliers used to obtain
+//    it.  The factorization can be written A=L*U, where L is a product of
+//    permutation and unit lower triangular matrices, and U is upper triangular.
+//
+//    Input, int LDA, the leading dimension of A.
+//
+//    Input, int N, the order of the matrix A.
+//
+//    Output, int IPVT[N], the pivot indices.
+//
+//    Output, int SGEFA, singularity indicator.
+//    0, normal value.
+//    K, if U(K,K) == 0.  This is not an error condition for this subroutine,
+//    but it does indicate that SGESL or SGEDI will divide by zero if called.
+//    Use RCOND in SGECO for a reliable indication of singularity.
+//
+{
+  int info;
+  int j;
+  int k;
+  int l;
+  float t;
+//
+//  Gaussian elimination with partial pivoting.
+//
+  info = 0;
+
+  for ( k = 1; k <= n-1; k++ )
+  {
+//
+//  Find L = pivot index.
+//
+    l = isamax ( n-k+1, a+(k-1)+(k-1)*lda, 1 ) + k - 1;
+    ipvt[k-1] = l;
+//
+//  Zero pivot implies this column already triangularized.
+//
+    if ( a[l-1+(k-1)*lda] == 0.0 )
+    {
+      info = k;
+      continue;
+    }
+//
+//  Interchange if necessary.
+//
+    if ( l != k )
+    {
+      t = a[l-1+(k-1)*lda];
+      a[l-1+(k-1)*lda] = a[k-1+(k-1)*lda];
+      a[k-1+(k-1)*lda] = t;
+    }
+//
+//  Compute multipliers.
+//
+    t = -1.0 / a[k-1+(k-1)*lda];
+
+    sscal ( n-k, t, a+k+(k-1)*lda, 1 );
+//
+//  Row elimination with column indexing.
+//
+    for ( j = k+1; j <= n; j++ )
+    {
+      t = a[l-1+(j-1)*lda];
+      if ( l != k )
+      {
+        a[l-1+(j-1)*lda] = a[k-1+(j-1)*lda];
+        a[k-1+(j-1)*lda] = t;
+      }
+      saxpy ( n-k, t, a+k+(k-1)*lda, 1, a+k+(j-1)*lda, 1 );
+    }
+
+  }
+
+  ipvt[n-1] = n;
+
+  if ( a[n-1+(n-1)*lda] == 0.0 )
+  {
+    info = n;
+  }
+
+  return info;
+}
+//****************************************************************************80
+
+void sgesl ( float a[], int lda, int n, int ipvt[], float b[], int job )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    SGESL solves a real general linear system A * X = B.
+//
+//  Discussion:
+//
+//    SGESL can solve either of the systems A * X = B or A' * X = B.
+//
+//    The system matrix must have been factored by SGECO or SGEFA.
+//
+//    A division by zero will occur if the input factor contains a
+//    zero on the diagonal.  Technically this indicates singularity
+//    but it is often caused by improper arguments or improper
+//    setting of LDA.  It will not occur if the subroutines are
+//    called correctly and if SGECO has set 0.0 < RCOND
+//    or SGEFA has set INFO == 0.
+//
+//  Modified:
+//
+//    16 May 2005
+//
+//  Author:
+//
+//    C++ translation by John Burkardt.
+//
+//  Reference:
+//
+//    Dongarra, Moler, Bunch and Stewart,
+//    LINPACK User's Guide,
+//    SIAM, (Society for Industrial and Applied Mathematics),
+//    3600 University City Science Center,
+//    Philadelphia, PA, 19104-2688.
+//    ISBN 0-89871-172-X
+//
+//  Parameters:
+//
+//    Input, float A[LDA*N], the output from SGECO or SGEFA.
+//
+//    Input, int LDA, the leading dimension of A.
+//
+//    Input, int N, the order of the matrix A.
+//
+//    Input, int IPVT[N], the pivot vector from SGECO or SGEFA.
+//
+//    Input/output, float B[N].
+//    On input, the right hand side vector.
+//    On output, the solution vector.
+//
+//    Input, int JOB.
+//    0, solve A * X = B;
+//    nonzero, solve A' * X = B.
+//
+{
+  int k;
+  int l;
+  float t;
+//
+//  Solve A * X = B.
+//
+  if ( job == 0 )
+  {
+    for ( k = 1; k <= n-1; k++ )
+    {
+      l = ipvt[k-1];
+      t = b[l-1];
+
+      if ( l != k )
+      {
+        b[l-1] = b[k-1];
+        b[k-1] = t;
+      }
+
+      saxpy ( n-k, t, a+k+(k-1)*lda, 1, b+k, 1 );
+
+    }
+
+    for ( k = n; 1 <= k; k-- )
+    {
+      b[k-1] = b[k-1] / a[k-1+(k-1)*lda];
+      t = -b[k-1];
+      saxpy ( k-1, t, a+0+(k-1)*lda, 1, b, 1 );
+    }
+  }
+//
+//  Solve A' * X = B.
+//
+  else
+  {
+    for ( k = 1; k <= n; k++ )
+    {
+      t = sdot ( k-1, a+0+(k-1)*lda, 1, b, 1 );
+      b[k-1] = ( b[k-1] - t ) / a[k-1+(k-1)*lda];
+    }
+
+    for ( k = n-1; 1 <= k; k-- )
+    {
+      b[k-1] = b[k-1] + sdot ( n-k, a+k+(k-1)*lda, 1, b+k, 1 );
+      l = ipvt[k-1];
+
+      if ( l != k )
+      {
+        t = b[l-1];
+        b[l-1] = b[k-1];
+        b[k-1] = t;
+      }
+    }
+  }
+  return;
+}
+//****************************************************************************80
+
+void sscal ( int n, float sa, float x[], int incx )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    SSCAL scales a vector by a constant.
+//
+//  Modified:
+//
+//    02 May 2005
+//
+//  Author:
+//
+//    Jack Dongarra
+//
+//  Reference:
+//
+//    Dongarra, Moler, Bunch, Stewart,
+//    LINPACK User's Guide,
+//    SIAM, 1979.
+//
+//    Lawson, Hanson, Kincaid, Krogh,
+//    Basic Linear Algebra Subprograms for Fortran Usage,
+//    Algorithm 539,
+//    ACM Transactions on Mathematical Software,
+//    Volume 5, Number 3, September 1979, pages 308-323.
+//
+//  Parameters:
+//
+//    Input, int N, the number of entries in the vector.
+//
+//    Input, float SA, the multiplier.
+//
+//    Input/output, float X[*], the vector to be scaled.
+//
+//    Input, int INCX, the increment between successive entries of X.
+//
+{
+  int i;
+  int ix;
+  int m;
+
+  if ( n <= 0 )
+  {
+  }
+  else if ( incx == 1 )
+  {
+    m = n % 5;
+
+    for ( i = 0; i < m; i++ )
+    {
+      x[i] = sa * x[i];
+    }
+
+    for ( i = m; i < n; i = i + 5 )
+    {
+      x[i]   = sa * x[i];
+      x[i+1] = sa * x[i+1];
+      x[i+2] = sa * x[i+2];
+      x[i+3] = sa * x[i+3];
+      x[i+4] = sa * x[i+4];
+    }
+  }
+  else
+  {
+    if ( 0 <= incx )
+    {
+      ix = 0;
+    }
+    else
+    {
+      ix = ( - n + 1 ) * incx;
+    }
+
+    for ( i = 0; i < n; i++ )
+    {
+      x[ix] = sa * x[ix];
+      ix = ix + incx;
+    }
+
+  }
+
+  return;
+}
+//****************************************************************************80
+
+int isamax ( int n, float dx[], int incx )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    ISAMAX finds the index of the vector element of maximum absolute value.
+//
+//  Modified:
+//
+//    02 May 2005
+//
+//  Reference:
+//
+//    Dongarra, Moler, Bunch, Stewart,
+//    LINPACK User's Guide,
+//    SIAM, 1979.
+//
+//    Lawson, Hanson, Kincaid, Krogh,
+//    Basic Linear Algebra Subprograms for Fortran Usage,
+//    Algorithm 539,
+//    ACM Transactions on Mathematical Software,
+//    Volume 5, Number 3, September 1979, pages 308-323.
+//
+//  Parameters:
+//
+//    Input, int N, the number of entries in the vector.
+//
+//    Input, float X[*], the vector to be examined.
+//
+//    Input, int INCX, the increment between successive entries of SX.
+//
+//    Output, int ISAMAX, the index of the element of maximum
+//    absolute value.
+//
+{
+  float dmax;
+  int i;
+  int ix;
+  int value;
+
+  value = 0;
+
+  if ( n < 1 || incx <= 0 )
+  {
+    return value;
+  }
+
+  value = 1;
+
+  if ( n == 1 )
+  {
+    return value;
+  }
+
+  if ( incx == 1 )
+  {
+    dmax = r4_abs ( dx[0] );
+
+    for ( i = 1; i < n; i++ )
+    {
+      if ( dmax < r4_abs ( dx[i] ) )
+      {
+        value = i + 1;
+        dmax = r4_abs ( dx[i] );
+      }
+    }
+  }
+  else
+  {
+    ix = 0;
+    dmax = r4_abs ( dx[0] );
+    ix = ix + incx;
+
+    for ( i = 1; i < n; i++ )
+    {
+      if ( dmax < r4_abs ( dx[ix] ) )
+      {
+        value = i + 1;
+        dmax = r4_abs ( dx[ix] );
+      }
+      ix = ix + incx;
+    }
+  }
+
+  return value;
+}
+//****************************************************************************80
+
+float r4_abs ( float x )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    R4_ABS returns the absolute value of an R4.
+//
+//  Modified:
+//
+//    02 April 2005
+//
+//  Author:
+//
+//    John Burkardt
+//
+//  Parameters:
+//
+//    Input, float X, the quantity whose absolute value is desired.
+//
+//    Output, float R4_ABS, the absolute value of X.
+//
+{
+  if ( 0.0 <= x )
+  {
+    return x;
+  } 
+  else
+  {
+    return ( -x );
+  }
+}
+//****************************************************************************80
+
+float r4_epsilon ( void )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    R4_EPSILON returns the R4 round off unit.
+//
+//  Discussion:
+//
+//    R4_EPSILON is a number R which is a power of 2 with the property that,
+//    to the precision of the computer's arithmetic,
+//      1 < 1 + R
+//    but 
+//      1 = ( 1 + R / 2 )
+//
+//  Modified:
+//
+//    01 July 2004
+//
+//  Author:
+//
+//    John Burkardt
+//
+//  Parameters:
+//
+//    Output, float R4_EPSILON, the float precision round-off unit.
+//
+{
+  float r;
+
+  r = 1.0E+00;
+
+  while ( 1.0E+00 < ( float ) ( 1.0E+00 + r )  )
+  {
+    r = r / 2.0E+00;
+  }
+
+  return ( 2.0E+00 * r );
+}
+//****************************************************************************80
+
+float r4_max ( float x, float y )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    R4_MAX returns the maximum of two R4's.
+//
+//  Modified:
+//
+//    18 August 2004
+//
+//  Author:
+//
+//    John Burkardt
+//
+//  Parameters:
+//
+//    Input, float X, Y, the quantities to compare.
+//
+//    Output, float R4_MAX, the maximum of X and Y.
+//
+{
+  if ( y < x )
+  {
+    return x;
+  } 
+  else
+  {
+    return y;
+  }
+}
+//****************************************************************************80
+
+float r4_random ( int iseed[4] )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    R4_RANDOM returns a uniformly distributed random number between 0 and 1.
+//
+//  Discussion:
+//
+//    This routine uses a multiplicative congruential method with modulus
+//    2**48 and multiplier 33952834046453 (see G.S.Fishman,
+//    'Multiplicative congruential random number generators with modulus
+//    2**b: an exhaustive analysis for b = 32 and a partial analysis for
+//    b = 48', Math. Comp. 189, pp 331-344, 1990).
+//
+//    48-bit integers are stored in 4 integer array elements with 12 bits
+//    per element. Hence the routine is portable across machines with
+//    integers of 32 bits or more.
+//
+//  Parameters:
+//
+//    Input/output, integer ISEED(4).
+//    On entry, the seed of the random number generator; the array
+//    elements must be between 0 and 4095, and ISEED(4) must be odd.
+//    On exit, the seed is updated.
+//
+//    Output, float R4_RANDOM, the next pseudorandom number.
+//
+{
+  int ipw2 = 4096;
+  int it1;
+  int it2;
+  int it3;
+  int it4;
+  int m1 = 494;
+  int m2 = 322;
+  int m3 = 2508;
+  int m4 = 2549;
+  float one = 1.0;
+  float r = 1.0 / 4096.0;
+  float value;
+//
+//  Multiply the seed by the multiplier modulo 2**48.
+//
+  it4 = iseed[3] * m4;
+  it3 = it4 / ipw2;
+  it4 = it4 - ipw2 * it3;
+  it3 = it3 + iseed[2] * m4 + iseed[3] * m3;
+  it2 = it3 / ipw2;
+  it3 = it3 - ipw2 * it2;
+  it2 = it2 + iseed[1] * m4 + iseed[2] * m3 + iseed[3] * m2;
+  it1 = it2 / ipw2;
+  it2 = it2 - ipw2 * it1;
+  it1 = it1 + iseed[0] * m4 + iseed[1] * m3 + iseed[2] * m2 + iseed[3] * m1;
+  it1 = ( it1 % ipw2 );
+//
+//  Return updated seed
+//
+  iseed[0] = it1;
+  iseed[1] = it2;
+  iseed[2] = it3;
+  iseed[3] = it4;
+//
+//  Convert 48-bit integer to a real number in the interval (0,1)
+//
+  value = 
+      r * ( ( float ) ( it1 ) 
+    + r * ( ( float ) ( it2 ) 
+    + r * ( ( float ) ( it3 ) 
+    + r * ( ( float ) ( it4 ) ) ) ) );
+
+  return value;
+}
+//****************************************************************************80
+
+float *r4mat_gen ( int lda, int n )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    R4MAT_GEN generates a random R4MAT.
+//
+//  Modified:
+//
+//    06 June 2005
+//
+//  Parameters:
+//
+//    Input, integer LDA, the leading dimension of the matrix.
+//
+//    Input, integer N, the order of the matrix.
+//
+//    Output, float R4MAT_GEN[LDA*N], the N by N matrix.
+//
+{
+  float *a;
+  int i;
+  int init[4] = { 1, 2, 3, 1325 };
+  int j;
+
+  a = new float[lda*n];
+
+  for ( j = 1; j <= n; j++ )
+  {
+    for ( i = 1; i <= n; i++ )
+    {
+      a[i-1+(j-1)*lda] = r4_random ( init ) - 0.5;
+    }
+  }
+
+  return a;
+}
+//****************************************************************************80
+
+void timestamp ( void )
+
+//****************************************************************************80
+//
+//  Purpose:
+//
+//    TIMESTAMP prints the current YMDHMS date as a time stamp.
+//
+//  Example:
+//
+//    May 31 2001 09:45:54 AM
+//
+//  Modified:
+//
+//    24 September 2003
+//
+//  Author:
+//
+//    John Burkardt
+//
+//  Parameters:
+//
+//    None
+//
+{
+# define TIME_SIZE 40
+
+  static char time_buffer[TIME_SIZE];
+  const struct tm *tm;
+  size_t len;
+  time_t now;
+
+  now = time ( NULL );
+  tm = localtime ( &now );
+
+  len = strftime ( time_buffer, TIME_SIZE, "%d %B %Y %I:%M:%S %p", tm );
+
+  cout << time_buffer << "\n";
+
+  return;
+# undef TIME_SIZE
+}
