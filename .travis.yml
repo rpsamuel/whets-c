@@ -12,10 +12,11 @@ before_install:
   - pip install --user cpp-coveralls
 
 script:
-  - g++ -c benchc.cpp
+  - g++ -o benchc.exe benchc.cpp
+  - benchc
   - mkdir build
   - cd build
-  - g++ -c benchc.cpp
+ 
 
 after_success:
   - coveralls --root .. -E ".*external.*" -E ".*CMakeFiles.*" -E ".*test/.*.cpp.*"
