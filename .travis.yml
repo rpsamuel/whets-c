@@ -14,7 +14,7 @@ before_install:
 script:
   - g++ -o benchc benchc.cpp
   - ls -al
-  - benchc
+  - ./benchc
   - mkdir build
   - cd build
  
