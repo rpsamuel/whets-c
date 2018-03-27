@@ -12,7 +12,8 @@ before_install:
   - pip install --user cpp-coveralls
 
 script:
-  - g++ -o benchc.exe benchc.cpp
+  - g++ -o benchc benchc.cpp
+  - ls -al
   - benchc
   - mkdir build
   - cd build
